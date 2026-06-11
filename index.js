@@ -6,8 +6,9 @@ const { google } = require('googleapis');
 const { sheetValuesToObject } = require('./src/utils/utils'); 
 const { config } = require('dotenv');
 const { jwtClient } = require('./src/config/google'); 
-const { getAllSheetsData } = require('./src/controllers/sheetsController');
+const { getAllSheetsData, createRow, updateRow,deleteRow, addAvance, addMeta } = require('./src/controllers/sheetsController');
 config(); 
+
 
 const app = express();
 const router = express.Router();
@@ -23,29 +24,15 @@ app.get('/', (req, res) => {
 });
 
 app.get('/getAllSheetsData', getAllSheetsData);
+// Rutas genéricas
+router.post('/:sheetName', createRow);
+router.put('/:sheetName/:id', updateRow);
+router.delete('/:sheetName/:id', deleteRow);
 
-// Ruta para obtener datos de Google Sheets
-app.post('/getData', async (req, res) => {
-  try {
-    const { sheetName } = req.body;
-    const spreadsheetId = process.env.spreadsheet;
-    const range = `${sheetName}!A1:Z1000`; 
-    const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+router.post('/metas', addMeta);
+router.post('/avances', addAvance);
 
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range,
-    });
 
-    const values = response.data.values;
-    const data = sheetValuesToObject(values); 
-    console.log('Datos obtenidos de Google Sheets:', data);
-    res.status(200).json({ status: true, data });
-  } catch (error) {
-    console.error('Error obteniendo datos de Google Sheets:', error);
-    res.status(400).json({ status: false, error });
-  }
-});
 
 // Ruta para actualizar datos en Google Sheets
 app.post('/updateData', async (req, res) => {
