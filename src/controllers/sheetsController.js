@@ -65,19 +65,24 @@ const SHEET_COLUMNS = {
   },
   METAS:{
     id: 0,
-    id_indicador: 1,
-    meta_2024: 2,
-    meta_2025: 3,
-    meta_2026: 4,
-    total_trienio: 5,
-    tipo: 6,
+    id_indicador_producto: 1,
+    meta_2025: 2,
+    meta_2026: 3,
+    meta_2027: 4,
+    meta_2028: 5,
+    meta_2029: 6,
+    meta_2030: 7,
+    total_trienio: 8,
+    tipo: 9,
   },
   AVANCES:{
     id: 0,
     id_indicador: 1,
-    Avance2024: 2,
-    Avance2025: 3,
-    Avance2026: 4,
+    Avance2025: 2,
+    Avance2026: 3,
+    Avance2027: 5,
+    Avance2028: 6,
+    Avance2029: 7,
   }
 };
 
@@ -293,7 +298,7 @@ export const createRow = async (req, res) => {
     return res.status(201).json({
       status: true,
       message: 'Fila creada correctamente.',
-      data: createdRow || fallbackData,
+      data: fallbackData,
     });
     
   } catch (error) {
