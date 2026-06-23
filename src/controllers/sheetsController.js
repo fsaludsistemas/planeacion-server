@@ -3,7 +3,6 @@ import { config } from 'dotenv';
 import { google } from 'googleapis';
 import { jwtClient } from '../config/google.js';
 import { sheetValuesToObject } from '../utils/utils.js';
-import { sheetCells } from '../config/sheetRanges.js';
 config();
 
 
@@ -62,6 +61,14 @@ const SHEET_COLUMNS = {
     id_periodo: 7,
     objetivo_escuela: 8,
     nombre: 9,
+    id_responde_a: 10,
+    logro: 11,
+    responsable: 12,
+    suma_facultad: 13,
+  },
+  RESPONDE_A:{
+    id: 0,
+    nombre: 1,
   },
   METAS:{
     id: 0,
@@ -83,7 +90,17 @@ const SHEET_COLUMNS = {
     Avance2027: 5,
     Avance2028: 6,
     Avance2029: 7,
-  }
+  },
+  EVIDENCIAS:{
+    id: 0,
+    id_indicador_producto: 1,
+    url_2025: 2,
+    url_2026: 3,
+    url_2027: 4,
+    url_2028: 5,
+    url_2029: 6,
+    url_2030: 7,
+  },
 };
 
 
