@@ -36,7 +36,7 @@ function sheetValuesToObject(values = []) {
         // Opción A (Por defecto): Guardar un texto personalizado o mantenerlo limpio
         rowObject[header] = (valorCelda !== undefined && valorCelda !== null && valorCelda !== '') 
           ? valorCelda 
-          : 'No aplica'; // <- Cambia 'No aplica' por '' si prefieres que quede en blanco, pero controlado.
+          : ''; // <- Cambia 'No aplica' por '' si prefieres que quede en blanco, pero controlado.
 
         /* 
         Opción B (Alternativa): Si prefieres que la propiedad directamente NO exista 
