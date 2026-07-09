@@ -324,6 +324,17 @@ export const createRow = async (req, res) => {
   }
 };
 
+const withFixedSheetName = (handler, sheetName) => {
+  return (req, res) => {
+    req.params = {
+      ...req.params,
+      sheetName,
+    };
+
+    return handler(req, res);
+  };
+};
+
 export const updateRow = async (req, res) => {
   try {
     const spreadsheetId = process.env.spreadsheet;
@@ -334,7 +345,7 @@ export const updateRow = async (req, res) => {
     if (!sheetRanges[sheetName]) {
       return res.status(400).json({
         status: false,
-        message: `Hoja invalida. Opciones: ${Object.keys(sheetRanges).join(', ')}`,
+        message: `Hoja invalida. Opcionesss: ${Object.keys(sheetRanges).join(', ')}`,
       });
     }
 
@@ -382,6 +393,236 @@ export const updateRow = async (req, res) => {
     return res.status(400).json({ status: false, message: error.message });
   }
 };
+
+/**
+ * Funciones para guardar la url de evidencia y desde la url de la evidencia extraer la tabla
+ * para hacer crear un importrange en la hoja de avances
+ * 
+ */
+const extractSpreadsheetId = (url) => {
+  const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (match) return match[1];
+  const paramMatch = url.match(/[?&]id=([a-zA-Z0-9-_]+)/);
+  if (paramMatch) return paramMatch[1];
+  return null;
+};
+
+const extractGid = (url) => {
+  const match = url.match(/[#&]gid=(\d+)/);
+  return match ? match[1] : '0';
+};
+
+const getSheetNameByGid = async (sheets, spreadsheetId, gid) => {
+  const metadata = await sheets.spreadsheets.get({ spreadsheetId });
+  const sheet = metadata.data.sheets.find(
+    (s) => String(s.properties.sheetId) === String(gid)
+  );
+  if (!sheet) {
+    throw new Error(`No se encontró una hoja con gid=${gid} en el sheet externo.`);
+  }
+  return sheet.properties.title;
+};
+
+const findRowIndexByColumnValue = (rows, columnIndex, value) => {
+  return rows.findIndex((row, index) => {
+    if (index === 0) {
+      return false;
+    }
+
+    return String(row[columnIndex] || '') === String(value);
+  });
+};
+
+const getAvanceFieldFromUrlField = (urlField) => {
+  const suffix = String(urlField || '').replace(/^url_/, '');
+  if (!suffix) {
+    return null;
+  }
+
+  return `Avance${suffix}`;
+};
+
+/**
+ * Controlador:
+ * 1. Guarda todos los campos de data en EVIDENCIAS usando SHEET_COLUMNS
+ * 2. Por cada campo cuyo nombre empiece con "url_", extrae la tabla del sheet
+ *    externo y escribe un IMPORTRANGE en AVANCES apuntando a G2
+ *
+ * Body esperado:
+ * {
+ *   "data": {
+ *     "url_2024": "https://docs.google.com/spreadsheets/d/ABC.../edit#gid=0",
+ *     "avances_2024": "C5",   // celda de AVANCES donde va el IMPORTRANGE de url_2024
+ *     "otro_campo": "valor"
+ *   }
+ * }
+ *
+ * Convención: por cada campo "url_X" se actualiza automáticamente el campo
+ * "AvanceX" en la hoja AVANCES para el indicador de la ruta.
+ */
+export const saveEvidenciaWithImportRange = async (req, res) => {
+  try {
+    const spreadsheetId = process.env.spreadsheet;
+    const sheetName = 'EVIDENCIAS';
+    const { id } = req.params;
+    const { data = {}, urlField, valueInputOption = 'USER_ENTERED' } = req.body;
+    const detectedUrlField = urlField || Object.keys(data).find((key) => key.startsWith('url_')) || 'url_2025';
+
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({
+        status: false,
+        message: 'Debes enviar un objeto data con los campos de la evidencia.',
+      });
+    }
+
+    if (!data[detectedUrlField]) {
+      return res.status(400).json({
+        status: false,
+        message: `Debes enviar el campo "${detectedUrlField}" con el link de la evidencia.`,
+      });
+    }
+
+    const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+    const rows = await getSheetRows(sheets, spreadsheetId, sheetName);
+    const columns = SHEET_COLUMNS[sheetName];
+
+    if (!columns) {
+      return res.status(500).json({
+        status: false,
+        message: `No se encontró la configuración de columnas para ${sheetName}.`,
+      });
+    }
+
+    const evidenceIdIndex = rows.findIndex((row, index) => index > 0 && String(row[columns.id]) === String(id));
+    const indicadorIdIndex = findRowIndexByColumnValue(rows, columns.id_indicador_producto, id);
+    const rowIndex = evidenceIdIndex !== -1 ? evidenceIdIndex : indicadorIdIndex;
+    const evidenceUrl = data[detectedUrlField];
+
+    let updatedRow;
+    if (rowIndex !== -1) {
+      updatedRow = [...rows[rowIndex]];
+    } else {
+      const newRowSize = Math.max(...Object.values(columns)) + 1;
+      updatedRow = Array(newRowSize).fill('');
+      updatedRow[columns.id] = rows.length > 1
+        ? Math.max(...rows.slice(1).map((row) => parseInt(row[columns.id], 10) || 0)) + 1
+        : 1;
+      updatedRow[columns.id_indicador_producto] = id;
+    }
+
+    for (const [key, value] of Object.entries(data)) {
+      if (columns[key] !== undefined) {
+        updatedRow[columns[key]] = value;
+      }
+    }
+
+    updatedRow[columns.id_indicador_producto] = id;
+    updatedRow[columns[detectedUrlField]] = evidenceUrl;
+
+    const rowRange = rowIndex !== -1 ? `${sheetName}!A${rowIndex + 1}` : `${sheetName}!A${rows.length + 1}`;
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: rowRange,
+      valueInputOption,
+      requestBody: { values: [updatedRow] },
+    });
+
+    const externalSpreadsheetId = extractSpreadsheetId(evidenceUrl);
+    if (!externalSpreadsheetId) {
+      return res.status(400).json({
+        status: false,
+        message: 'No se pudo extraer el ID del spreadsheet desde la URL de la evidencia.',
+      });
+    }
+
+    const gid = extractGid(evidenceUrl);
+    let externalSheetName;
+
+    try {
+      externalSheetName = await getSheetNameByGid(sheets, externalSpreadsheetId, gid);
+    } catch (err) {
+      if (err?.code === 403 || err?.status === 403) {
+        return res.status(403).json({
+          status: false,
+          message: `Sin acceso al sheet externo. Compártelo con: ${process.env.SERVICE_ACCOUNT_EMAIL}`,
+          serviceAccountEmail: process.env.SERVICE_ACCOUNT_EMAIL,
+        });
+      }
+
+      if (err?.code === 404 || err?.status === 404) {
+        return res.status(404).json({
+          status: false,
+          message: 'No se encontró el sheet externo. Verifica la URL.',
+        });
+      }
+
+      throw err;
+    }
+
+    const avanceRows = await getSheetRows(sheets, spreadsheetId, 'AVANCES');
+    const avanceColumns = SHEET_COLUMNS.AVANCES;
+    const avanceField = getAvanceFieldFromUrlField(detectedUrlField);
+
+    if (!avanceField || avanceColumns[avanceField] === undefined) {
+      return res.status(400).json({
+        status: false,
+        message: `No existe una columna AVANCES para el campo "${detectedUrlField}".`,
+      });
+    }
+
+    const avanceRowIndex = findRowIndexByColumnValue(avanceRows, avanceColumns.id_indicador, id);
+    const importRangeFormula = `=IMPORTRANGE("${evidenceUrl}"; "${externalSheetName}!G2")`;
+
+    let updatedAvanceRow;
+    let avanceTargetRange;
+
+    if (avanceRowIndex === -1) {
+      const avanceId = avanceRows.length > 1
+        ? Math.max(...avanceRows.slice(1).map((row) => parseInt(row[avanceColumns.id], 10) || 0)) + 1
+        : 1;
+
+      updatedAvanceRow = Array(Math.max(...Object.values(avanceColumns)) + 1).fill('');
+      updatedAvanceRow[avanceColumns.id] = avanceId;
+      updatedAvanceRow[avanceColumns.id_indicador] = id;
+      updatedAvanceRow[avanceColumns[avanceField]] = importRangeFormula;
+      avanceTargetRange = `AVANCES!A${avanceRows.length + 1}`;
+    } else {
+      updatedAvanceRow = [...avanceRows[avanceRowIndex]];
+      updatedAvanceRow[avanceColumns[avanceField]] = importRangeFormula;
+      avanceTargetRange = `AVANCES!A${avanceRowIndex + 1}`;
+    }
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: avanceTargetRange,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [updatedAvanceRow] },
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: 'Evidencia guardada y avance actualizado con IMPORTRANGE.',
+      evidence: sheetValuesToObject([updatedRow], sheetName)[0],
+      importRange: {
+        hojaExterna: externalSheetName,
+        idIndicador: id,
+        campoEvidencia: detectedUrlField,
+        campoAvance: avanceField,
+        celdaAvance: avanceRowIndex === -1
+          ? `AVANCES!${columnIndexToLetter(avanceColumns[avanceField])}${avanceRows.length + 1}`
+          : `AVANCES!${columnIndexToLetter(avanceColumns[avanceField])}${avanceRowIndex + 1}`,
+        formula: importRangeFormula,
+        rowCreated: avanceRowIndex === -1,
+      },
+    });
+  } catch (error) {
+    console.error('Error en saveEvidenciaWithImportRange:', error);
+    return res.status(400).json({ status: false, message: error.message });
+  }
+};
+
+
+
 
 export const deleteRow = async (req, res) => {
   try {
@@ -439,8 +680,8 @@ async function getSheetId(sheets, spreadsheetId, sheetName) {
     return sheet.properties.sheetId;
 }
 
-export const addIndicadorProducto = createRow;
-export const updateIndicadorProducto = updateRow;
-export const deleteIndicadorProducto = deleteRow;
-export const addMeta = createRow;
-export const addAvance = createRow;
+export const addIndicadorProducto = withFixedSheetName(createRow, 'INDICADORES_PRODUCTO');
+export const updateIndicadorProducto = withFixedSheetName(updateRow, 'INDICADORES_PRODUCTO');
+export const deleteIndicadorProducto = withFixedSheetName(deleteRow, 'INDICADORES_PRODUCTO');
+export const addMeta = withFixedSheetName(createRow, 'METAS');
+export const addAvance = withFixedSheetName(createRow, 'AVANCES');

@@ -6,7 +6,7 @@ const { google } = require('googleapis');
 const { sheetValuesToObject } = require('./src/utils/utils'); 
 const { config } = require('dotenv');
 const { jwtClient } = require('./src/config/google'); 
-const { getAllSheetsData, createRow, updateRow,deleteRow, addAvance, addMeta } = require('./src/controllers/sheetsController');
+const { getAllSheetsData, createRow, updateRow, deleteRow, addAvance, addMeta, addIndicadorProducto, updateIndicadorProducto, deleteIndicadorProducto, saveEvidenciaWithImportRange } = require('./src/controllers/sheetsController');
 config(); 
 
 
@@ -24,13 +24,20 @@ app.get('/', (req, res) => {
 });
 
 app.get('/getAllSheetsData', getAllSheetsData);
+
+app.post('/evidencias/:id', saveEvidenciaWithImportRange);
+
+router.post('/metas', addMeta);
+router.post('/avances', addAvance);
+
+router.post('/indicadores_producto', addIndicadorProducto);
+router.put('/indicadores_producto/:id', updateIndicadorProducto);
+router.delete('/indicadores_producto/:id', deleteIndicadorProducto);
+
 // Rutas genéricas
 router.post('/:sheetName', createRow);
 router.put('/:sheetName/:id', updateRow);
 router.delete('/:sheetName/:id', deleteRow);
-
-router.post('/metas', addMeta);
-router.post('/avances', addAvance);
 
 
 
