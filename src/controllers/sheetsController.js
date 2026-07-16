@@ -9,7 +9,7 @@ config();
 const SHEET_COLUMNS = {
   USUARIOS:{
     id: 0,
-    dependencia: 1,
+    id_dependencia: 1,
     correo: 2,
     rol: 3
   },
