@@ -6,6 +6,7 @@ const { google } = require('googleapis');
 const { sheetValuesToObject } = require('./src/utils/utils'); 
 const { config } = require('dotenv');
 const { jwtClient } = require('./src/config/google'); 
+const { sendEmail } = require('./src/services/sendEmails');
 const { getAllSheetsData, createRow, updateRow, deleteRow, addAvance, addMeta, addIndicadorProducto, updateIndicadorProducto, deleteIndicadorProducto, saveEvidenciaWithImportRange } = require('./src/controllers/sheetsController');
 config(); 
 
@@ -26,6 +27,21 @@ app.get('/', (req, res) => {
 app.get('/getAllSheetsData', getAllSheetsData);
 
 app.post('/evidencias/:id', saveEvidenciaWithImportRange);
+
+app.post('/send-email', async (req, res) => {
+  try {
+    const result = await sendEmail(req.body || {});
+    const statusCode = result.status ? 200 : 400;
+    return res.status(statusCode).json(result);
+  } catch (error) {
+    console.error('Error enviando correo:', error);
+    return res.status(500).json({
+      status: false,
+      message: 'No se pudo enviar el correo.',
+      error: error.message,
+    });
+  }
+});
 
 router.post('/metas', addMeta);
 router.post('/avances', addAvance);
