@@ -11,7 +11,8 @@ const SHEET_COLUMNS = {
     id: 0,
     id_dependencia: 1,
     correo: 2,
-    rol: 3
+    rol: 3,
+    editor: 4
   },
   PERIODO:{
     id: 0,

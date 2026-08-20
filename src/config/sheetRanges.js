@@ -1,5 +1,5 @@
 export const sheetRanges = {
-  USUARIOS: 'A1:D30',
+  USUARIOS: 'A1:E50',
   PERIODO: 'A1:E5',
   DEPENDENCIAS: 'A1:D35',
   INDICADORES_RESULTADO: 'A1:C300',
