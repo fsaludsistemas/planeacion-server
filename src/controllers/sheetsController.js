@@ -66,6 +66,7 @@ const SHEET_COLUMNS = {
     logro: 11,
     responsable: 12,
     suma_facultad: 13,
+    eje: 14,
   },
   RESPONDE_A:{
     id: 0,
