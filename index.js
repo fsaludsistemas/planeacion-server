@@ -7,7 +7,7 @@ const { sheetValuesToObject } = require('./src/utils/utils');
 const { config } = require('dotenv');
 const { jwtClient } = require('./src/config/google'); 
 const { sendEmail } = require('./src/services/sendEmails');
-const { getAllSheetsData, createRow, updateRow, deleteRow, addAvance, addMeta, addIndicadorProducto, updateIndicadorProducto, deleteIndicadorProducto, saveEvidenciaWithImportRange } = require('./src/controllers/sheetsController');
+const { getAllSheetsData, exportToGoogleDocs, createRow, updateRow, deleteRow, addAvance, addMeta, addIndicadorProducto, updateIndicadorProducto, deleteIndicadorProducto, saveEvidenciaWithImportRange, uploadFileToDrive } = require('./src/controllers/sheetsController');
 config(); 
 
 
@@ -25,8 +25,10 @@ app.get('/', (req, res) => {
 });
 
 app.get('/getAllSheetsData', getAllSheetsData);
+app.post('/export-docs', exportToGoogleDocs);
 
 app.post('/evidencias/:id', saveEvidenciaWithImportRange);
+app.post('/upload-drive', multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }).single('file'), uploadFileToDrive);
 
 app.post('/send-email', async (req, res) => {
   try {

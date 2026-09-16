@@ -3,6 +3,7 @@ import { config } from 'dotenv';
 import { google } from 'googleapis';
 import { jwtClient } from '../config/google.js';
 import { sheetValuesToObject } from '../utils/utils.js';
+import { Readable } from 'stream';
 config();
 
 
@@ -12,7 +13,8 @@ const SHEET_COLUMNS = {
     id_dependencia: 1,
     correo: 2,
     rol: 3,
-    editor: 4
+    editor: 4,
+    refresh_token: 5
   },
   PERIODO:{
     id: 0,
@@ -21,11 +23,16 @@ const SHEET_COLUMNS = {
     nombre_decano: 3,
     actual: 4
   },
-  DEPENDENCIA:{
+  DEPENDENCIAS:{
     id: 0,
     nombre: 1,
     abreviatura: 2,
-    tipo: 3
+    tipo: 3,
+    2026: 4,
+    2027: 5,
+    2028: 6,
+    2029: 7,
+    2030: 8
   },
   DESAFIOS:{
     id: 0,
@@ -162,13 +169,170 @@ export const getAllSheetsData = async (req, res) => {
     const allDataWithObjects = {};
 
     for (const [sheetName, values] of Object.entries(allData)) {
-      allDataWithObjects[sheetName] = sheetValuesToObject(values);
+      allDataWithObjects[sheetName] = sheetValuesToObject(values).map((row) => {
+        if (sheetName === 'USUARIOS') {
+          delete row.refresh_token;
+        }
+        return row;
+      });
     }
     res.status(200).json({ status: true, data: allDataWithObjects }); //
   } catch (error) {
     console.error('Error obteniendo datos de todas las hojas:', error);
     console.log('Error details:', error.response ? error.response.data : error.message);
     res.status(400).json({ status: false, error });
+  }
+};
+
+const getAdminRefreshToken = async (sheets, spreadsheetId) => {
+  const rows = await getSheetRows(sheets, spreadsheetId, 'USUARIOS');
+  const adminEmail = String(process.env.EMAIL || '').trim().toLowerCase();
+  const emailColumn = SHEET_COLUMNS.USUARIOS.correo;
+  const tokenColumn = SHEET_COLUMNS.USUARIOS.refresh_token;
+  const adminRow = rows.slice(1).find((row) => (
+    String(row[emailColumn] || '').trim().toLowerCase() === adminEmail
+  ));
+  const refreshToken = String(adminRow?.[tokenColumn] || '').trim();
+
+  if (!adminEmail) {
+    throw new Error('Falta configurar EMAIL para identificar al administrador.');
+  }
+
+  if (!refreshToken) {
+    throw new Error(`No hay refresh_token para el administrador ${process.env.EMAIL}.`);
+  }
+
+  return refreshToken;
+};
+
+const getAdminOAuthClient = async (sheets, spreadsheetId) => {
+  const refreshToken = await getAdminRefreshToken(sheets, spreadsheetId);
+  const clientId = process.env.GOOGLE_WEB_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error('Faltan GOOGLE_WEB_CLIENT_ID, GOOGLE_CLIENT_SECRET o GOOGLE_REDIRECT_URI.');
+  }
+
+  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  return oauth2Client;
+};
+
+export const uploadFileToDrive = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ status: false, message: 'Debes enviar un archivo en el campo "file".' });
+    }
+
+    if (!process.env.DRIVE_FOLDER_ID) {
+      return res.status(500).json({ status: false, message: 'Falta configurar DRIVE_FOLDER_ID.' });
+    }
+
+    const spreadsheetId = process.env.spreadsheet;
+    const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+    const oauth2Client = await getAdminOAuthClient(sheets, spreadsheetId);
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const uploadedFile = await drive.files.create({
+      requestBody: {
+        name: req.file.originalname,
+        parents: [process.env.DRIVE_FOLDER_ID],
+      },
+      media: {
+        mimeType: req.file.mimetype || 'application/octet-stream',
+        body: Readable.from(req.file.buffer),
+      },
+      fields: 'id,name,mimeType,webViewLink,webContentLink',
+    });
+
+    const fileId = uploadedFile.data.id;
+    return res.status(201).json({
+      status: true,
+      message: 'Archivo subido correctamente.',
+      fileId,
+      name: uploadedFile.data.name,
+      mimeType: uploadedFile.data.mimeType,
+      url: uploadedFile.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
+      webViewLink: uploadedFile.data.webViewLink || null,
+      webContentLink: uploadedFile.data.webContentLink || null,
+    });
+  } catch (error) {
+    console.error('Error subiendo archivo a Drive:', error);
+    return res.status(400).json({ status: false, message: error.message });
+  }
+};
+
+export const exportToGoogleDocs = async (req, res) => {
+  try {
+    const { title = 'Exportacion de planeacion', data, content, shareWith } = req.body;
+
+    if (content === undefined && data === undefined) {
+      return res.status(400).json({
+        status: false,
+        message: 'Debes enviar content o data para crear el documento.',
+      });
+    }
+
+    const documentContent = content !== undefined
+      ? String(content)
+      : JSON.stringify(data, null, 2);
+    const docs = google.docs({ version: 'v1', auth: jwtClient });
+    const drive = google.drive({ version: 'v3', auth: jwtClient });
+
+    const document = await docs.documents.create({
+      requestBody: { title: String(title) },
+    });
+
+    const documentId = document.data.documentId;
+    const text = `${String(title)}\n\n${documentContent}`;
+
+    await docs.documents.batchUpdate({
+      documentId,
+      requestBody: {
+        requests: [
+          {
+            insertText: {
+              location: { index: 1 },
+              text,
+            },
+          },
+          {
+            updateParagraphStyle: {
+              range: { startIndex: 1, endIndex: String(title).length + 1 },
+              paragraphStyle: { namedStyleType: 'TITLE' },
+              fields: 'namedStyleType',
+            },
+          },
+        ],
+      },
+    });
+
+    if (shareWith) {
+      await drive.permissions.create({
+        fileId: documentId,
+        sendNotificationEmail: true,
+        requestBody: {
+          type: 'user',
+          role: 'writer',
+          emailAddress: shareWith,
+        },
+      });
+    }
+
+    return res.status(201).json({
+      status: true,
+      message: 'Google Docs creado correctamente.',
+      documentId,
+      url: `https://docs.google.com/document/d/${documentId}/edit`,
+    });
+  } catch (error) {
+    console.error('Error creando Google Docs:', error);
+    return res.status(500).json({
+      status: false,
+      message: 'No se pudo crear el Google Docs.',
+      error: error.message,
+    });
   }
 };
 

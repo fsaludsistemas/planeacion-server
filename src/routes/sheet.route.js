@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import { 
     getAllSheetsData,
+    exportToGoogleDocs,
     createRow,
     updateRow,
     deleteRow,
@@ -16,6 +17,7 @@ import {
 const router = Router();
 
 router.get('/getAllSheetsData', getAllSheetsData);
+router.post('/export-docs', exportToGoogleDocs);
 
 router.post('/evidencias/:id', saveEvidenciaWithImportRange);
 
