@@ -66,6 +66,10 @@ El codigo usa principalmente estas variables:
 - `api_key`
 - `client_email`
 - `private_key`
+- `GOOGLE_WEB_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI`
+- `DRIVE_FOLDER_ID`
 
 Ejemplo minimo de `.env`:
 
@@ -77,12 +81,150 @@ redirect_uris=TU_REDIRECT_URI
 api_key=TU_ACCESS_TOKEN_O_API_KEY
 client_email=service-account@tu-proyecto.iam.gserviceaccount.com
 private_key="-----BEGIN PRIVATE KEY-----\nMII...\n-----END PRIVATE KEY-----\n"
+GOOGLE_WEB_CLIENT_ID=TU_CLIENT_ID_OAUTH_WEB
+GOOGLE_CLIENT_SECRET=TU_CLIENT_SECRET_OAUTH_WEB
+GOOGLE_REDIRECT_URI=http://localhost:3002/oauth2callback
+DRIVE_FOLDER_ID=ID_DE_LA_CARPETA_DEL_ADMIN
 ```
 
 Importante sobre `private_key`:
 
 - Debe estar en formato `BEGIN PRIVATE KEY` (PKCS#8).
 - Si va en una sola linea dentro de `.env`, usa `\\n` para saltos de linea.
+
+## Subir archivos a Drive
+
+### Configuracion requerida
+
+La subida utiliza OAuth de la cuenta administradora. La Service Account sigue siendo necesaria para leer el spreadsheet y obtener el token almacenado en `USUARIOS`.
+
+- `EMAIL`: correo exacto del administrador. El backend busca este correo en la columna `correo` de `USUARIOS`.
+- `USUARIOS.refresh_token`: refresh token OAuth del administrador. Debe estar en la columna `refresh_token` de la fila del administrador.
+- `DRIVE_FOLDER_ID`: ID de la carpeta de Drive donde se almacenaran los archivos.
+- `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y `GOOGLE_REDIRECT_URI`: credenciales OAuth Web.
+
+El frontend nunca necesita conocer ni enviar el refresh token. Tampoco debe enviar un `access_token`.
+
+Para generar o reemplazar el token del administrador, ejecuta localmente:
+
+```bash
+node Script/script-token.js
+```
+
+El enlace de autorizacion abre el selector de cuentas de Google. Elige manualmente la cuenta cuyo correo coincide con `EMAIL` y acepta el permiso de Drive. Si el navegador entra directamente con otra cuenta, selecciona `Usar otra cuenta`. Tambien puedes pegar el enlace en una ventana de incognito para evitar la cuenta predeterminada del navegador. El script usa el puerto configurado en `GOOGLE_REDIRECT_URI`; se recomienda `3002` para no interferir con la API que usa el puerto `3001`.
+
+### Endpoint
+
+```text
+POST /upload-drive
+Content-Type: multipart/form-data
+```
+
+El archivo debe enviarse con el nombre de campo `file`. El limite actual es de 25 MB.
+
+No establezcas manualmente el header `Content-Type` cuando uses `FormData`; el navegador agrega automaticamente el boundary necesario.
+
+### Ejemplo desde el frontend
+
+```js
+async function uploadFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_URL}/upload-drive`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const result = await response.json();
+
+  if (!response.ok || !result.status) {
+    throw new Error(result.message || 'No se pudo subir el archivo.');
+  }
+
+  return result;
+}
+
+const result = await uploadFile(input.files[0]);
+console.log(result.url);
+```
+
+### Respuesta exitosa
+
+HTTP `201 Created`:
+
+```json
+{
+  "status": true,
+  "message": "Archivo subido correctamente.",
+  "fileId": "1AbC...",
+  "name": "informe.pdf",
+  "mimeType": "application/pdf",
+  "url": "https://drive.google.com/file/d/1AbC.../view",
+  "webViewLink": "https://drive.google.com/file/d/1AbC.../view",
+  "webContentLink": null
+}
+```
+
+Guarda `result.url` o `result.webViewLink` en la celda de evidencia correspondiente. `fileId` puede guardarse tambien si el frontend necesita identificar el archivo posteriormente.
+
+### Guardar el enlace en Sheets
+
+Despues de subir el archivo, actualiza la fila de `EVIDENCIAS` usando el endpoint generico. Por ejemplo, para guardar el enlace en `url_2025` de la evidencia con ID `15`:
+
+```js
+async function saveEvidenceUrl(evidenceId, fileUrl) {
+  const response = await fetch(`${API_URL}/EVIDENCIAS/${evidenceId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      data: {
+        url_2025: fileUrl,
+      },
+    }),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok || !result.status) {
+    throw new Error(result.message || 'No se pudo guardar el enlace.');
+  }
+
+  return result.data;
+}
+
+const uploadResult = await uploadFile(file);
+await saveEvidenceUrl(15, uploadResult.url);
+```
+
+El flujo completo es:
+
+```text
+Seleccionar archivo
+    -> POST /upload-drive
+    -> recibir result.url
+    -> PUT /EVIDENCIAS/:id
+    -> guardar url_2025, url_2026, etc. en Sheets
+```
+
+### Errores posibles
+
+`400 Bad Request`:
+
+```json
+{
+  "status": false,
+  "message": "Debes enviar un archivo en el campo \"file\"."
+}
+```
+
+Tambien puede indicar que el `refresh_token` no existe, fue revocado o expiro. En ese caso se debe repetir la autorizacion OAuth y actualizar `USUARIOS.refresh_token`.
+
+`500 Internal Server Error` con `Falta configurar DRIVE_FOLDER_ID`: falta definir el ID de la carpeta en las variables de entorno.
+
+El campo `refresh_token` nunca se incluye en las respuestas de la API.
 
 ## Estructura esperada en Google Sheets
 
