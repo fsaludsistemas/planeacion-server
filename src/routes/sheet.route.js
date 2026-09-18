@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 
 import { 
     getAllSheetsData,
@@ -11,15 +12,23 @@ import {
     deleteIndicadorProducto,
     addMeta,
     addAvance,
-    saveEvidenciaWithImportRange
+    saveEvidenciaWithImportRange,
+    updateFileInDrive,
+    deleteFileFromDrive
 } from "../controllers/sheetsController.js";
 
 const router = Router();
+const uploadMiddleware = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 25 * 1024 * 1024 },
+}).single('file');
 
 router.get('/getAllSheetsData', getAllSheetsData);
 router.post('/export-docs', exportToGoogleDocs);
 
 router.post('/evidencias/:id', saveEvidenciaWithImportRange);
+router.put('/upload-drive/:fileId', uploadMiddleware, updateFileInDrive);
+router.delete('/upload-drive/:fileId', deleteFileFromDrive);
 
 // Rutas específicas para indicadores, metas y avances
 router.post('/indicadores_producto', addIndicadorProducto);
