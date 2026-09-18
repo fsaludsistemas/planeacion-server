@@ -199,6 +199,51 @@ const uploadResult = await uploadFile(file);
 await saveEvidenceUrl(15, uploadResult.url);
 ```
 
+### Editar o eliminar un archivo
+
+Conserva el `fileId` que devuelve `POST /upload-drive`. Para reemplazar el contenido
+del archivo manteniendo el mismo enlace de Drive, envia el nuevo archivo:
+
+```js
+async function updateFile(fileId, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_URL}/upload-drive/${fileId}`, {
+    method: 'PUT',
+    body: formData,
+  });
+  const result = await response.json();
+
+  if (!response.ok || !result.status) {
+    throw new Error(result.message || 'No se pudo actualizar el archivo.');
+  }
+
+  return result;
+}
+```
+
+Para eliminarlo de Drive:
+
+```js
+async function deleteFile(fileId) {
+  const response = await fetch(`${API_URL}/upload-drive/${fileId}`, {
+    method: 'DELETE',
+  });
+  const result = await response.json();
+
+  if (!response.ok || !result.status) {
+    throw new Error(result.message || 'No se pudo eliminar el archivo.');
+  }
+
+  return result;
+}
+```
+
+Editar conserva el `fileId`, por lo que la URL guardada en `EVIDENCIAS` sigue siendo
+valida. Al eliminar, actualiza tambien la celda `url_2025`, `url_2026`, etc. de la
+evidencia para quitar el enlace que ya no existe.
+
 El flujo completo es:
 
 ```text

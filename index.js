@@ -7,7 +7,7 @@ const { sheetValuesToObject } = require('./src/utils/utils');
 const { config } = require('dotenv');
 const { jwtClient } = require('./src/config/google'); 
 const { sendEmail } = require('./src/services/sendEmails');
-const { getAllSheetsData, exportToGoogleDocs, createRow, updateRow, deleteRow, addAvance, addMeta, addIndicadorProducto, updateIndicadorProducto, deleteIndicadorProducto, saveEvidenciaWithImportRange, uploadFileToDrive } = require('./src/controllers/sheetsController');
+const { getAllSheetsData, exportToGoogleDocs, createRow, updateRow, deleteRow, addAvance, addMeta, addIndicadorProducto, updateIndicadorProducto, deleteIndicadorProducto, saveEvidenciaWithImportRange, uploadFileToDrive, updateFileInDrive, deleteFileFromDrive } = require('./src/controllers/sheetsController');
 config(); 
 
 
@@ -28,7 +28,10 @@ app.get('/getAllSheetsData', getAllSheetsData);
 app.post('/export-docs', exportToGoogleDocs);
 
 app.post('/evidencias/:id', saveEvidenciaWithImportRange);
-app.post('/upload-drive', multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }).single('file'), uploadFileToDrive);
+const uploadMiddleware = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }).single('file');
+app.post('/upload-drive', uploadMiddleware, uploadFileToDrive);
+app.put('/upload-drive/:fileId', uploadMiddleware, updateFileInDrive);
+app.delete('/upload-drive/:fileId', deleteFileFromDrive);
 
 app.post('/send-email', async (req, res) => {
   try {

@@ -263,6 +263,74 @@ export const uploadFileToDrive = async (req, res) => {
   }
 };
 
+export const updateFileInDrive = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ status: false, message: 'Debes enviar un archivo en el campo "file".' });
+    }
+
+    const fileId = String(req.params.fileId || '').trim();
+    if (!fileId) {
+      return res.status(400).json({ status: false, message: 'Debes indicar el fileId del documento.' });
+    }
+
+    const spreadsheetId = process.env.spreadsheet;
+    const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+    const oauth2Client = await getAdminOAuthClient(sheets, spreadsheetId);
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    const updatedFile = await drive.files.update({
+      fileId,
+      requestBody: { name: req.file.originalname },
+      media: {
+        mimeType: req.file.mimetype || 'application/octet-stream',
+        body: Readable.from(req.file.buffer),
+      },
+      fields: 'id,name,mimeType,webViewLink,webContentLink',
+    });
+
+    const file = updatedFile.data;
+    return res.status(200).json({
+      status: true,
+      message: 'Archivo actualizado correctamente.',
+      fileId: file.id || fileId,
+      name: file.name,
+      mimeType: file.mimeType,
+      url: file.webViewLink || `https://drive.google.com/file/d/${file.id || fileId}/view`,
+      webViewLink: file.webViewLink || null,
+      webContentLink: file.webContentLink || null,
+    });
+  } catch (error) {
+    console.error('Error actualizando archivo en Drive:', error);
+    const statusCode = error?.code === 404 || error?.status === 404 ? 404 : 400;
+    return res.status(statusCode).json({ status: false, message: error.message });
+  }
+};
+
+export const deleteFileFromDrive = async (req, res) => {
+  try {
+    const fileId = String(req.params.fileId || '').trim();
+    if (!fileId) {
+      return res.status(400).json({ status: false, message: 'Debes indicar el fileId del documento.' });
+    }
+
+    const spreadsheetId = process.env.spreadsheet;
+    const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+    const oauth2Client = await getAdminOAuthClient(sheets, spreadsheetId);
+    const drive = google.drive({ version: 'v3', auth: oauth2Client });
+    await drive.files.delete({ fileId });
+
+    return res.status(200).json({
+      status: true,
+      message: 'Archivo eliminado correctamente.',
+      fileId,
+    });
+  } catch (error) {
+    console.error('Error eliminando archivo de Drive:', error);
+    const statusCode = error?.code === 404 || error?.status === 404 ? 404 : 400;
+    return res.status(statusCode).json({ status: false, message: error.message });
+  }
+};
+
 export const exportToGoogleDocs = async (req, res) => {
   try {
     const { title = 'Exportacion de planeacion', data, content, shareWith } = req.body;
