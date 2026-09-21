@@ -111,7 +111,7 @@ Para generar o reemplazar el token del administrador, ejecuta localmente:
 node Script/script-token.js
 ```
 
-El enlace de autorizacion abre el selector de cuentas de Google. Elige manualmente la cuenta cuyo correo coincide con `EMAIL` y acepta el permiso de Drive. Si el navegador entra directamente con otra cuenta, selecciona `Usar otra cuenta`. Tambien puedes pegar el enlace en una ventana de incognito para evitar la cuenta predeterminada del navegador. El script usa el puerto configurado en `GOOGLE_REDIRECT_URI`; se recomienda `3002` para no interferir con la API que usa el puerto `3001`.
+El enlace de autorizacion abre el selector de cuentas de Google. Elige manualmente la cuenta cuyo correo coincide con `EMAIL` y acepta el permiso de Drive. Si el navegador entra directamente con otra cuenta, selecciona `Usar otra cuenta`. Tambien puedes pegar el enlace en una ventana de incognito para evitar la cuenta predeterminada del navegador. El script usa el puerto configurado en `GOOGLE_REDIRECT_URI`; se recomienda `3002` para no interferir con la API que usa el puerto `3001`. El token queda en la terminal, se debe copiar y pegar en la columna refresh_token de la hoja de usuarios de base planeacion solo en el registro del admin, fsalud.sistemas@correounivalle.edu.co
 
 ### Endpoint
 
