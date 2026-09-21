@@ -15,7 +15,8 @@ const app = express();
 const router = express.Router();
 const PORT = process.env.PORT || 3001;
 const spreadsheetId = process.env.spreadsheet;
-app.use(bodyParser.json()); 
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 app.use(cors());
 
 // Ruta raíz para verificar si el servidor está funcionando

@@ -333,49 +333,83 @@ export const deleteFileFromDrive = async (req, res) => {
 
 export const exportToGoogleDocs = async (req, res) => {
   try {
-    const { title = 'Exportacion de planeacion', data, content, shareWith } = req.body;
+    const { title = 'Exportacion de planeacion', data, content, html, shareWith } = req.body;
 
-    if (content === undefined && data === undefined) {
+    if (content === undefined && data === undefined && html === undefined) {
       return res.status(400).json({
         status: false,
-        message: 'Debes enviar content o data para crear el documento.',
+        message: 'Debes enviar content, data o html para crear el documento.',
       });
     }
 
-    const documentContent = content !== undefined
-      ? String(content)
-      : JSON.stringify(data, null, 2);
     const docs = google.docs({ version: 'v1', auth: jwtClient });
     const drive = google.drive({ version: 'v3', auth: jwtClient });
+    let documentId;
 
-    const document = await docs.documents.create({
-      requestBody: { title: String(title) },
-    });
+    if (html) {
+      // Si envían HTML, usamos la API de Drive para crear y convertir el archivo
+      const fileMetadata = {
+        name: title,
+        mimeType: 'application/vnd.google-apps.document',
+      };
+      
+      if (process.env.DRIVE_FOLDER_ID_CONSOLIDADOS) {
+        fileMetadata.parents = [process.env.DRIVE_FOLDER_ID_CONSOLIDADOS];
+      }
 
-    const documentId = document.data.documentId;
-    const text = `${String(title)}\n\n${documentContent}`;
+      const media = {
+        mimeType: 'text/html',
+        body: html,
+      };
 
-    await docs.documents.batchUpdate({
-      documentId,
-      requestBody: {
-        requests: [
-          {
-            insertText: {
-              location: { index: 1 },
-              text,
+      const file = await drive.files.create({
+        resource: fileMetadata,
+        media: media,
+        fields: 'id',
+      });
+      
+      documentId = file.data.id;
+    } else {
+      // Flujo original para texto plano o data
+      const documentContent = content !== undefined ? String(content) : JSON.stringify(data, null, 2);
+      
+      const document = await docs.documents.create({
+        requestBody: { title: String(title) },
+      });
+
+      documentId = document.data.documentId;
+      const text = `${String(title)}\n\n${documentContent}`;
+
+      await docs.documents.batchUpdate({
+        documentId,
+        requestBody: {
+          requests: [
+            { insertText: { location: { index: 1 }, text } },
+            {
+              updateParagraphStyle: {
+                range: { startIndex: 1, endIndex: String(title).length + 1 },
+                paragraphStyle: { namedStyleType: 'TITLE' },
+                fields: 'namedStyleType',
+              },
             },
-          },
-          {
-            updateParagraphStyle: {
-              range: { startIndex: 1, endIndex: String(title).length + 1 },
-              paragraphStyle: { namedStyleType: 'TITLE' },
-              fields: 'namedStyleType',
-            },
-          },
-        ],
-      },
-    });
+          ],
+        },
+      });
 
+      // Mover a la carpeta de consolidados si es texto plano (el html ya se crea allí directamente)
+      if (process.env.DRIVE_FOLDER_ID_CONSOLIDADOS) {
+        const fileData = await drive.files.get({ fileId: documentId, fields: 'parents' });
+        const previousParents = fileData.data.parents ? fileData.data.parents.join(',') : '';
+        await drive.files.update({
+          fileId: documentId,
+          addParents: process.env.DRIVE_FOLDER_ID_CONSOLIDADOS,
+          removeParents: previousParents,
+          fields: 'id, parents',
+        });
+      }
+    }
+
+    // Compartir el documento si viene el correo
     if (shareWith) {
       await drive.permissions.create({
         fileId: documentId,

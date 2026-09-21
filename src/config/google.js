@@ -2,7 +2,7 @@ const { google } = require('googleapis');
 const { config } = require('dotenv');
 config();
 
-const SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'];
+const SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/documents'];
 const {
   client_id,
   client_secret,

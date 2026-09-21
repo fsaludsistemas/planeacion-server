@@ -111,7 +111,7 @@ Para generar o reemplazar el token del administrador, ejecuta localmente:
 node Script/script-token.js
 ```
 
-El enlace de autorizacion abre el selector de cuentas de Google. Elige manualmente la cuenta cuyo correo coincide con `EMAIL` y acepta el permiso de Drive. Si el navegador entra directamente con otra cuenta, selecciona `Usar otra cuenta`. Tambien puedes pegar el enlace en una ventana de incognito para evitar la cuenta predeterminada del navegador. El script usa el puerto configurado en `GOOGLE_REDIRECT_URI`; se recomienda `3002` para no interferir con la API que usa el puerto `3001`.
+El enlace de autorizacion abre el selector de cuentas de Google. Elige manualmente la cuenta cuyo correo coincide con `EMAIL` y acepta el permiso de Drive. Si el navegador entra directamente con otra cuenta, selecciona `Usar otra cuenta`. Tambien puedes pegar el enlace en una ventana de incognito para evitar la cuenta predeterminada del navegador. El script usa el puerto configurado en `GOOGLE_REDIRECT_URI`; se recomienda `3002` para no interferir con la API que usa el puerto `3001`. El token queda en la terminal, se debe copiar y pegar en la columna refresh_token de la hoja de usuarios de base planeacion solo en el registro del admin, fsalud.sistemas@correounivalle.edu.co
 
 ### Endpoint
 
@@ -346,6 +346,53 @@ Obtiene todos los datos de todas las hojas configuradas en `sheetRanges.js`, dev
     "METAS": [...],
     "AVANCES": [...]
   }
+}
+```
+
+---
+
+### POST /export-docs
+
+Exporta texto plano o JSON a un nuevo documento de Google Docs. Opcionalmente lo comparte con un correo específico para otorgar permisos de edición.
+
+**Método:** `POST`
+
+**URL:** `/export-docs` (Directamente en la raíz de la API)
+
+**Body (JSON):**
+
+```json
+{
+  "title": "Reporte de Planeación 2026",
+  "html": "<h1>Reporte 2026</h1><p style='color: blue;'>Este es un reporte con estilos básicos</p>",
+  "shareWith": "usuario@ejemplo.com"
+}
+```
+
+- `title` (Opcional): El título del documento (por defecto "Exportacion de planeacion").
+- `content`, `data` o `html` (Requerido al menos uno): El contenido a escribir. 
+  - Usar `content` para texto plano.
+  - Usar `data` (objeto) para formatearlo automáticamente a JSON.
+  - Usar `html` para enviar código HTML. Google Drive interpretará las etiquetas (como `<h1>`, `<table>`, `<b>`) y los estilos CSS básicos (como `color` o `background-color`) y los convertirá en un Google Doc formateado.
+- `shareWith` (Opcional): Correo electrónico al cual darle permisos de escritura y enviar notificación.
+
+**Respuesta exitosa (201 Created):**
+
+```json
+{
+  "status": true,
+  "message": "Google Docs creado correctamente.",
+  "documentId": "1aBcDeFgHiJk...",
+  "url": "https://docs.google.com/document/d/1aBcDeFgHiJk.../edit"
+}
+```
+
+**Respuesta de error (400 Bad Request):**
+
+```json
+{
+  "status": false,
+  "message": "Debes enviar content o data para crear el documento."
 }
 ```
 
