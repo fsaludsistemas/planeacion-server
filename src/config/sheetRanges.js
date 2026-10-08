@@ -12,6 +12,7 @@ export const sheetRanges = {
   METAS: 'A1:J364',
   AVANCES: 'A1:G364',
   EVIDENCIAS: 'A1:H100',
+  EJES: 'A1:B6',
 };
 
 

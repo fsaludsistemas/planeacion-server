@@ -110,6 +110,10 @@ const SHEET_COLUMNS = {
     url_2029: 6,
     url_2030: 7,
   },
+  EJES:{
+    id: 0,
+    nombre: 1,
+  },
 };
 
 
