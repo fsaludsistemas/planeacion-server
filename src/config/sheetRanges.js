@@ -1,4 +1,4 @@
-export const sheetRanges = {
+const sheetRanges = {
   USUARIOS: 'A1:F50',
   PERIODO: 'A1:E5',
   DEPENDENCIAS: 'A1:I35',
@@ -17,3 +17,4 @@ export const sheetRanges = {
 
 
 
+module.exports = { sheetRanges };
