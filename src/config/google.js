@@ -31,10 +31,15 @@ const authorize = () => {
   });
 };
 
+// Limpiar saltos de línea escapados, retornos de carro de Windows y líneas vacías
+const formattedKey = private_key
+  ? private_key.replace(/\\n/g, '\n').replace(/\r/g, '').replace(/\n+/g, '\n').trim()
+  : '';
+
 const jwtClient = new google.auth.JWT(
   client_email,
   null,
-  private_key.replace(/\\n/g, '\n'),
+  formattedKey,
   SCOPES
 );
 
