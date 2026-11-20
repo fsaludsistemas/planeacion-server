@@ -1,0 +1,18 @@
+[
+  {
+    "id_dependencia": 1,
+    "nombre": "Oficina de Asuntos Internacionales (OAI)",
+    "spreadsheetId": "19Lc6c8EReTRYcrcSXeRuAswUtlt3iPjzQfQldv8iUZw",
+    "sheetName": "METAS 2026-2030",
+    "headerRow": 3,
+    "enabled": true
+  },
+  {
+    "id_dependencia": 26,
+    "nombre": "Salud Publica",
+    "spreadsheetId": "1Q7S3OLlZ1X-ectsH3NX76pn6gBoCziPORElYHflaIuY",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
+  }
+]

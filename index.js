@@ -8,6 +8,7 @@ const { config } = require('dotenv');
 const { jwtClient } = require('./src/config/google'); 
 const { sendEmail } = require('./src/services/sendEmails');
 const { getAllSheetsData, exportToGoogleDocs, createRow, updateRow, deleteRow, addAvance, addMeta, addIndicadorProducto, updateIndicadorProducto, deleteIndicadorProducto, saveEvidenciaWithImportRange, uploadFileToDrive, updateFileInDrive, deleteFileFromDrive } = require('./src/controllers/sheetsController');
+const { syncAllSheets } = require('./scripts/sync-sheets');
 config(); 
 
 
@@ -44,6 +45,20 @@ app.post('/send-email', async (req, res) => {
     return res.status(500).json({
       status: false,
       message: 'No se pudo enviar el correo.',
+      error: error.message,
+    });
+  }
+});
+
+app.post('/sync-sheets', async (req, res) => {
+  try {
+    const result = await syncAllSheets();
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Error ejecutando sincronización manual:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al sincronizar las hojas de cálculo.',
       error: error.message,
     });
   }
