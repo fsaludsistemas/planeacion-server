@@ -74,6 +74,7 @@ const SHEET_COLUMNS = {
     responsable: 12,
     suma_facultad: 13,
     eje: 14,
+    numero_indicador: 15,
   },
   RESPONDE_A:{
     id: 0,

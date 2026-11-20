@@ -1,0 +1,32 @@
+name: Sincronizar Google Sheets de Dependencias
+
+on:
+  # Ejecución programada una vez al día en la madrugada de Colombia (4:00 AM COT = 09:00 UTC)
+  schedule:
+    - cron: '0 9 * * *'
+  # Permite ejecutar manualmente el workflow desde la pestaña "Actions" en GitHub
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Ejecutar script de sincronización
+        env:
+          CLIENT_EMAIL: ${{ secrets.CLIENT_EMAIL }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          SPREADSHEET: ${{ secrets.SPREADSHEET }}
+        run: npm run sync
