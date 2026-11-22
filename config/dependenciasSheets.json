@@ -14,5 +14,77 @@
     "sheetName": "METAS 2026",
     "headerRow": 3,
     "enabled": true
+  },
+    {
+    "id_dependencia": 24,
+    "nombre": "Medicina",
+    "spreadsheetId": "1GTcF-EvRgOqkLHt7VKnYcMErTrYXd-rn2WD6uOYlVow",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
+  },
+    {
+    "id_dependencia": 23,
+    "nombre": "Ciencias Basicas",
+    "spreadsheetId": "1KT9lkYrDieicP1bl_dn2xOEQTLK6LlCqrRWHOLfpNgk",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
+  },
+  {
+    "id_dependencia": 22,
+    "nombre": "Odontologia",
+    "spreadsheetId": "16VulnINIge8l109xWd8nx-7KK6X6slypv9U7mcJKx1I",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
+  },
+    {
+    "id_dependencia": 20,
+    "nombre": "Vicedecanatura Académica (VACAD)",
+    "spreadsheetId": "132OA_Q5iFowN-DD0DHrQu30J7vhYFb8Z_yE_fbAu5sw",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
+  },
+    {
+    "id_dependencia": 13,
+    "nombre": "Vicedecanatura de Investigación - Comité de ética en investigación en Salud (CEIS)",
+    "spreadsheetId": "1Y08ItetnV9OXURoXDUqnmbk4jaY_7Ak93eQ9XFHV2Hw",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
+  },
+    {
+    "id_dependencia": 28,
+    "nombre": "Enfermeria",
+    "spreadsheetId": "1SKo6eUDcH87KGUZsV0KLEQo7jmO7wQaE-gjNiUgAMyc",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
+  },
+    {
+    "id_dependencia": 7,
+    "nombre": "Oficina de Extensión y Proyección Social (OEPS)",
+    "spreadsheetId": "1HWCVoVuMaLEl89ExDROfX0SJz_GEIynScs87l_QoFLk",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
+  },
+  {
+    "id_dependencia": 4,
+    "nombre": "Dirección de Posgrados",
+    "spreadsheetId": "1pnqA2oQcMkncTxk783G_vJlaZCBoH7LklOjfiNGYZ2A",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
+  },
+    {
+    "id_dependencia": 3,
+    "nombre": "Sistema Interno de Aseguramiento de Calidad (SIAC)",
+    "spreadsheetId": "129F_hizVjSON798424i85AAy-vLPko-Ff74rG_dNTC0",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
   }
 ]

@@ -97,6 +97,7 @@ async function syncAllSheets() {
     respondeARes,
     indicadoresRes,
     metasRes,
+    avancesRes,
   ] = await Promise.all([
     sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'DESAFIOS!A1:B20' }),
     sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'EJES!A1:B10' }),
@@ -107,6 +108,7 @@ async function syncAllSheets() {
     sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'RESPONDE_A!A1:B20' }),
     sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'INDICADORES_PRODUCTO!A1:P600' }),
     sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'METAS!A1:J600' }),
+    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'AVANCES!A1:J600' }),
   ]);
 
   const desafiosRows = desafiosRes.data.values || [];
@@ -118,6 +120,7 @@ async function syncAllSheets() {
   const respondeARows = respondeARes.data.values || [];
   const indicadoresRows = indicadoresRes.data.values || [];
   const metasRows = metasRes.data.values || [];
+  const avancesRows = avancesRes.data.values || [];
 
   const indicadoresHeader = indicadoresRows[0] || [
     'id', 'id_dependencia', 'id_desafio', 'id_estrategia_convergente', 'id_estrategia_facultad',
@@ -135,20 +138,29 @@ async function syncAllSheets() {
     return match ? match[0] : '';
   };
 
-  // Helper para buscar ID en catálogo por código (1.1, 1.1.1), coincidencia de texto o ID numérico
+  // Helper para buscar ID en catálogo por código (1.1, 1.1.1, 1.1.1.1), coincidencia de texto o ID numérico
   const findCatalogId = (rows, text, idCol = 0, titleCol = 1) => {
     if (!text) return '';
     const cleanText = normalizeText(text);
 
-    // 1. Si tiene código de tipo 1.1 o 1.1.1 (ej. "ESTRATEGÍA 1.1" o "Programa 1.1.1")
+    // 1. Si tiene código de tipo 1.1, 1.1.1 o 1.1.1.1 (ej. "ESTRATEGÍA 1.1", "Programa 1.1.1", "1.1.2.1")
     const code = extractCode(text);
     if (code) {
+      // 1.1 Coincidencia exacta de código en el título
       const matchCode = rows.slice(1).find((r) => {
-        const title = normalizeText(r[titleCol]);
         const titleCode = extractCode(r[titleCol]);
-        return titleCode === code || title.includes(code);
+        return titleCode === code;
       });
       if (matchCode) return String(matchCode[idCol]);
+
+      // 1.2 Si el código está delimitado en el texto del título (ej. " 1.1 " o " 1.1. ")
+      const escapedCode = code.replace(/\./g, '\\.');
+      const regex = new RegExp(`(^|\\s|[^0-9.])${escapedCode}(\\.|\\s|[^0-9.]|$)`);
+      const matchRegex = rows.slice(1).find((r) => {
+        const title = normalizeText(r[titleCol]);
+        return regex.test(title);
+      });
+      if (matchRegex) return String(matchRegex[idCol]);
     }
 
     // 2. Coincidencia exacta de texto
@@ -162,11 +174,14 @@ async function syncAllSheets() {
     });
     if (partialMatch) return String(partialMatch[idCol]);
 
-    // 4. Si es solo un número (ej. "Desafío 1" -> "1")
-    const num = extractNumber(text);
-    if (num) {
-      const matchNum = rows.slice(1).find((r) => String(r[idCol]).trim() === num);
-      if (matchNum) return String(matchNum[idCol]);
+    // 4. Si NO tiene código decimal y es solo un número (ej. "Desafío 1" -> "1")
+    // Se condiciona a !code para evitar falsos positivos con códigos decimales (ej. "3.1" -> 3)
+    if (!code) {
+      const num = extractNumber(text);
+      if (num) {
+        const matchNum = rows.slice(1).find((r) => String(r[idCol]).trim() === num);
+        if (matchNum) return String(matchNum[idCol]);
+      }
     }
 
     return '';
@@ -210,13 +225,30 @@ async function syncAllSheets() {
     raw: r,
   }));
 
+  // Mapear filas de AVANCES
+  const existingAvances = avancesRows.slice(1).map((r, idx) => ({
+    rowIndex: idx + 2,
+    id: String(r[0] || ''),
+    id_indicador: String(r[1] || ''),
+    avance_2025: r[2] ?? '',
+    avance_2026: r[3] ?? '',
+    avance_2027: r[4] ?? '',
+    avance_2028: r[5] ?? '',
+    avance_2029: r[6] ?? '',
+    avance_2030: r[7] ?? '',
+    raw: r,
+  }));
+
   let maxIndicadorId = existingIndicadores.reduce((max, i) => Math.max(max, parseInt(i.id, 10) || 0), 0);
   let maxMetaId = existingMetas.reduce((max, m) => Math.max(max, parseInt(m.id, 10) || 0), 0);
+  let maxAvanceId = existingAvances.reduce((max, a) => Math.max(max, parseInt(a.id, 10) || 0), 0);
 
   const newIndicadoresToAppend = [];
   const newMetasToAppend = [];
+  const newAvancesToAppend = [];
   const indicadoresUpdates = [];
   const metasUpdates = [];
+  const avancesUpdates = [];
   const summaryResults = [];
 
   // 2. Procesar cada dependencia
@@ -226,9 +258,12 @@ async function syncAllSheets() {
 
     let depData;
     let rowMetadata = [];
+    let depSheetTitles = [];
+    let findSheetTitle = () => null;
+
     try {
-      // Leemos datos y metadatos de filas (para omitir filas ocultas por filtro o usuario)
-      const [res, metaRes] = await Promise.all([
+      // Leemos datos, metadatos de filas (para omitir filas ocultas) y títulos de pestañas
+      const [res, metaRes, sheetInfoRes] = await Promise.all([
         sheets.spreadsheets.values.get({
           spreadsheetId: dep.spreadsheetId,
           range: `'${dep.sheetName}'!A2:Z300`,
@@ -238,9 +273,21 @@ async function syncAllSheets() {
           ranges: [`'${dep.sheetName}'!A1:A300`],
           fields: 'sheets(data(rowMetadata(hiddenByUser,hiddenByFilter)))',
         }),
+        sheets.spreadsheets.get({
+          spreadsheetId: dep.spreadsheetId,
+          fields: 'sheets(properties(title))',
+        }),
       ]);
       depData = res.data.values || [];
       rowMetadata = metaRes.data.sheets?.[0]?.data?.[0]?.rowMetadata || [];
+      depSheetTitles = (sheetInfoRes.data.sheets || []).map((s) => s.properties.title);
+      findSheetTitle = (targetName) => {
+        const normTarget = String(targetName || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        if (!normTarget) return null;
+        return depSheetTitles.find(
+          (t) => t.replace(/\s+/g, ' ').trim().toLowerCase() === normTarget
+        );
+      };
     } catch (err) {
       console.error(`ERROR al leer la hoja de "${dep.nombre}":`, err.message);
       if (err.code === 403) {
@@ -292,6 +339,16 @@ async function syncAllSheets() {
     const col2028 = findColumnIndex(headers, ['2028']);
     const col2029 = findColumnIndex(headers, ['2029']);
     const col2030 = findColumnIndex(headers, ['2030']);
+    const colTablaInfo = findColumnIndex(headers, [
+      'Tabla de información',
+      'Tabla de informacion',
+      'Tabla de Información',
+      'Tabla de Informacion',
+      'Tabla información',
+      'Tabla informacion',
+      'Tabla info',
+      'Tabla',
+    ]);
 
     if (colNumInd === -1) {
       console.warn('⚠️ No se encontró la columna de "N° de indicador" en esta hoja. Saltando...');
@@ -308,6 +365,57 @@ async function syncAllSheets() {
       const valRowB = String(depData[1][colNumInd] || '').trim();
       if (!valRowB || isNaN(Number(valRowB))) {
         dataStartIndex = 2; // Inicia en la fila 4 (índice 2)
+      }
+    }
+
+    // Pre-cargar celdas de avance (G2 del año 2026) desde las hojas referenciadas en "Tabla de información"
+    const tablaRangesToFetch = [];
+    const tablaTitleMap = new Map(); // normTabla -> realSheetTitle
+
+    for (let r = dataStartIndex; r < depData.length; r++) {
+      const sheetRowNum = r + 2;
+      const isHidden = Boolean(
+        rowMetadata[sheetRowNum - 1]?.hiddenByUser ||
+        rowMetadata[sheetRowNum - 1]?.hiddenByFilter
+      );
+      if (isHidden) continue;
+
+      const row = depData[r];
+      if (!row || row.length === 0) continue;
+      const rawTabla = colTablaInfo !== -1 ? String(row[colTablaInfo] ?? '').trim() : '';
+      if (!rawTabla) continue;
+
+      const normTabla = rawTabla.replace(/\s+/g, ' ').trim().toLowerCase();
+      if (!tablaTitleMap.has(normTabla)) {
+        const realTitle = findSheetTitle(rawTabla);
+        if (realTitle) {
+          tablaTitleMap.set(normTabla, realTitle);
+          tablaRangesToFetch.push(`'${realTitle}'!G2`);
+        }
+      }
+    }
+
+    const avanceValueMap = new Map(); // normTabla -> valor formateado
+    if (tablaRangesToFetch.length > 0) {
+      try {
+        const batchG2 = await sheets.spreadsheets.values.batchGet({
+          spreadsheetId: dep.spreadsheetId,
+          ranges: tablaRangesToFetch,
+          valueRenderOption: 'FORMATTED_VALUE',
+        });
+        (batchG2.data.valueRanges || []).forEach((vr) => {
+          const m = (vr.range || '').match(/'?([^'!]+)'?!/);
+          const title = m ? m[1] : '';
+          const normTitle = title.replace(/\s+/g, ' ').trim().toLowerCase();
+          const val = vr.values && vr.values[0] && vr.values[0][0] !== undefined
+            ? String(vr.values[0][0]).trim()
+            : '';
+          if (normTitle) {
+            avanceValueMap.set(normTitle, val);
+          }
+        });
+      } catch (errG2) {
+        console.warn(`  ⚠️ No se pudieron leer las celdas G2 de "${dep.nombre}":`, errG2.message);
       }
     }
 
@@ -348,13 +456,13 @@ async function syncAllSheets() {
       const rawLogro = colLogro !== -1 ? row[colLogro] : '';
       const rawRespondeA = colRespondeA !== -1 ? row[colRespondeA] : '';
 
-      const idDesafio = findCatalogId(desafiosRows, rawDesafio) || extractNumber(rawDesafio);
-      const idEje = extractNumber(rawEje) || findCatalogId(ejesRows, rawEje);
-      const idConvergente = findCatalogId(convergentesRows, rawConvergente);
-      const idFacultad = findCatalogId(facultadRows, rawFacultad);
-      const idPrograma = findCatalogId(programasRows, rawPrograma);
-      const idResultado = findCatalogId(resultadoRows, rawResultado);
-      const idRespondeA = findCatalogId(respondeARows, rawRespondeA);
+      const idDesafio = findCatalogId(desafiosRows, rawDesafio, 0, 1) || extractNumber(rawDesafio);
+      const idEje = extractNumber(rawEje) || findCatalogId(ejesRows, rawEje, 0, 1);
+      const idConvergente = findCatalogId(convergentesRows, rawConvergente, 0, 2);
+      const idFacultad = findCatalogId(facultadRows, rawFacultad, 0, 2);
+      const idPrograma = findCatalogId(programasRows, rawPrograma, 0, 2);
+      const idResultado = findCatalogId(resultadoRows, rawResultado, 0, 2);
+      const idRespondeA = findCatalogId(respondeARows, rawRespondeA, 0, 1);
 
       const meta2026 = col2026 !== -1 ? String(row[col2026] ?? '').trim() : '';
       const meta2027 = col2027 !== -1 ? String(row[col2027] ?? '').trim() : '';
@@ -470,9 +578,52 @@ async function syncAllSheets() {
           }
         }
 
+        // DETECTAR CAMBIOS EN AVANCES (G2 del año 2026)
+        const rawTabla = colTablaInfo !== -1 ? String(row[colTablaInfo] ?? '').trim() : '';
+        const normTabla = rawTabla.replace(/\s+/g, ' ').trim().toLowerCase();
+        const avance2026 = avanceValueMap.get(normTabla) ?? '';
+
+        const existingAvance = existingAvances.find(
+          (a) => String(a.id_indicador) === String(existing.id)
+        );
+
+        const avanceDiffs = [];
+        if (existingAvance) {
+          const cur2026Avance = String(existingAvance.avance_2026 ?? '').trim();
+          if (avance2026 !== '' && cur2026Avance !== avance2026) {
+            avanceDiffs.push(`Avance 2026: "${cur2026Avance || '-'}" -> "${avance2026}"`);
+            const avanceRow = [...(existingAvance.raw || [])];
+            while (avanceRow.length < 8) avanceRow.push('');
+            avanceRow[0] = existingAvance.id;
+            avanceRow[1] = existing.id;
+            avanceRow[3] = avance2026;
+
+            avancesUpdates.push({
+              range: `AVANCES!A${existingAvance.rowIndex}:H${existingAvance.rowIndex}`,
+              values: [avanceRow],
+            });
+          }
+        } else if (avance2026 !== '') {
+          maxAvanceId++;
+          const newAvanceId = String(maxAvanceId);
+          const newAvanceRow = [
+            newAvanceId,
+            existing.id,
+            '', // avance_2025
+            avance2026,
+            '', // avance_2027
+            '', // avance_2028
+            '', // avance_2029
+            '', // avance_2030
+          ];
+          newAvancesToAppend.push(newAvanceRow);
+          avanceDiffs.push(`Avance 2026 (creado): "${avance2026}"`);
+        }
+
         const allDiffs = [
           ...indDiffs,
           ...(metaDiffs.length > 0 ? [`Metas: [${metaDiffs.join(', ')}]`] : []),
+          ...(avanceDiffs.length > 0 ? [`Avances: [${avanceDiffs.join(', ')}]`] : []),
         ];
 
         if (allDiffs.length > 0) {
@@ -531,6 +682,27 @@ async function syncAllSheets() {
 
         newMetasToAppend.push(newMetaRow);
 
+        // Crear fila de AVANCES si hay avance disponible
+        const rawTabla = colTablaInfo !== -1 ? String(row[colTablaInfo] ?? '').trim() : '';
+        const normTabla = rawTabla.replace(/\s+/g, ' ').trim().toLowerCase();
+        const avance2026 = avanceValueMap.get(normTabla) ?? '';
+
+        if (avance2026 !== '') {
+          maxAvanceId++;
+          const newAvanceId = String(maxAvanceId);
+          const newAvanceRow = [
+            newAvanceId,
+            newIndId,
+            '', // avance_2025
+            avance2026,
+            '', // avance_2027
+            '', // avance_2028
+            '', // avance_2029
+            '', // avance_2030
+          ];
+          newAvancesToAppend.push(newAvanceRow);
+        }
+
         depChangesLog.push({
           type: 'INSERT',
           numInd,
@@ -540,6 +712,7 @@ async function syncAllSheets() {
             idEje ? `Eje: ${idEje}` : null,
             idDesafio ? `Desafío ID: ${idDesafio}` : null,
             `Metas [2026-2030]: [${[meta2026, meta2027, meta2028, meta2029, meta2030].map((v) => v || '-').join(', ')}]`,
+            avance2026 ? `Avance 2026: "${avance2026}"` : null,
             rawLogro ? `Logro: "${String(rawLogro).trim()}"` : null,
           ].filter(Boolean),
         });
@@ -606,6 +779,17 @@ async function syncAllSheets() {
     });
   }
 
+  if (avancesUpdates.length > 0) {
+    console.log(`Aplicando ${avancesUpdates.length} actualizaciones en AVANCES...`);
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: centralSpreadsheetId,
+      resource: {
+        valueInputOption: 'USER_ENTERED',
+        data: avancesUpdates,
+      },
+    });
+  }
+
   // 4. Agregar nuevas filas si existen
   if (newIndicadoresToAppend.length > 0) {
     console.log(`Agregando ${newIndicadoresToAppend.length} nuevos registros a INDICADORES_PRODUCTO...`);
@@ -629,6 +813,17 @@ async function syncAllSheets() {
     });
   }
 
+  if (newAvancesToAppend.length > 0) {
+    console.log(`Agregando ${newAvancesToAppend.length} nuevos registros a AVANCES...`);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: centralSpreadsheetId,
+      range: 'AVANCES!A:H',
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      resource: { values: newAvancesToAppend },
+    });
+  }
+
   console.log('\n=== Sincronización completada exitosamente ===');
 
   return {
@@ -637,7 +832,9 @@ async function syncAllSheets() {
     timestamp: new Date().toISOString(),
     totalIndicadoresActualizados: indicadoresUpdates.length,
     totalMetasActualizadas: metasUpdates.length,
+    totalAvancesActualizados: avancesUpdates.length,
     totalNuevosIndicadores: newIndicadoresToAppend.length,
+    totalNuevosAvances: newAvancesToAppend.length,
     dependencias: summaryResults,
   };
 }
