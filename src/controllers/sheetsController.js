@@ -75,6 +75,7 @@ const SHEET_COLUMNS = {
     suma_facultad: 13,
     eje: 14,
     numero_indicador: 15,
+    aplica_estadisticas: 16,
   },
   RESPONDE_A:{
     id: 0,
@@ -561,8 +562,18 @@ export const createRow = async (req, res) => {
     const rows = await getSheetRows(sheets, spreadsheetId, sheetName);
     const newId = rows.length > 0 ? Math.max(...rows.slice(1).map(r => parseInt(r[0]) || 0)) + 1 : 1;
 
-    const columns = SHEET_COLUMNS[sheetName];
-    const newRow = Array(Object.keys(columns).length).fill('');
+    const baseColumns = SHEET_COLUMNS[sheetName] || {};
+    const columns = { ...baseColumns };
+    if (rows[0] && Array.isArray(rows[0])) {
+      rows[0].forEach((colName, idx) => {
+        const cleanCol = String(colName || '').trim();
+        if (cleanCol && columns[cleanCol] === undefined) {
+          columns[cleanCol] = idx;
+        }
+      });
+    }
+    const maxColIndex = Math.max(...Object.values(columns), 0);
+    const newRow = Array(maxColIndex + 1).fill('');
     newRow[columns.id] = newId;
 
     for (const key in data) {
@@ -637,7 +648,17 @@ export const updateRow = async (req, res) => {
       return res.status(404).json({ status: false, message: 'Fila no encontrada.' });
     }
 
-    const columns = SHEET_COLUMNS[sheetName];
+    const baseColumns = SHEET_COLUMNS[sheetName] || {};
+    const columns = { ...baseColumns };
+    if (rows[0] && Array.isArray(rows[0])) {
+      rows[0].forEach((colName, idx) => {
+        const cleanCol = String(colName || '').trim();
+        if (cleanCol && columns[cleanCol] === undefined) {
+          columns[cleanCol] = idx;
+        }
+      });
+    }
+
     const updatedRow = [...rows[rowIndex]];
 
     for (const key in data) {
@@ -654,7 +675,13 @@ export const updateRow = async (req, res) => {
       requestBody: { values: [updatedRow] },
     });
 
-    const resultRow = sheetValuesToObject([updatedRow], sheetName)[0];
+    let resultRow = sheetValuesToObject([rows[0], updatedRow])[0];
+    if (!resultRow) {
+      resultRow = {};
+      for (const key in columns) {
+        resultRow[key] = updatedRow[columns[key]];
+      }
+    }
 
     return res.status(200).json({
       status: true,

@@ -86,5 +86,23 @@
     "sheetName": "METAS 2026",
     "headerRow": 3,
     "enabled": true
+  },
+      {
+    "id_dependencia": 27,
+    "nombre": "Rehabilitacion Humana",
+    "spreadsheetId": "195jbV1Mb8EeIn567Jwot5KKXpVMhUw1v814TFUEGzGQ",
+    "sheetName": "METAS 2026",
+    "headerRow": 3,
+    "enabled": true
+  },
+     {
+    "id_dependencia": 27,
+    "nombre": "Bacteriologia",
+    "spreadsheetId": "1Q8B1jjyfio7Lf88s3X82qmMf0xw-hfyO8gAqmENuuHs",
+    "sheetName": "METAS 2026 - 2030",
+    "headerRow": 3,
+    "enabled": true
   }
+
+  
 ]
