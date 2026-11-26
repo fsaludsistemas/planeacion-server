@@ -1,9 +1,9 @@
 name: Sincronizar Google Sheets de Dependencias
 
 on:
-  # Ejecución programada una vez al día en la madrugada de Colombia (4:00 AM COT = 09:00 UTC)
+  # GitHub Actions usa UTC. 07:00 UTC = 02:00 AM en Colombia (COT, UTC-5).
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 7 * * *'
   # Permite ejecutar manualmente el workflow desde la pestaña "Actions" en GitHub
   workflow_dispatch:
 
