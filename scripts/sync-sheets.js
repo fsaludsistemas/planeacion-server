@@ -50,6 +50,44 @@ const getClient = () => {
   return google.sheets({ version: 'v4', auth: jwtClient });
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isQuotaError = (error) => {
+  const message = JSON.stringify(
+    error?.response?.data || error?.message || error || ''
+  );
+
+  return (
+    error?.code === 429 ||
+    message.includes('Quota exceeded') ||
+    message.includes('Read requests') ||
+    message.includes('RESOURCE_EXHAUSTED')
+  );
+};
+
+// Google recomienda reintentos con backoff para errores temporales de cuota.
+// El último intervalo supera un minuto para permitir que se renueve la cuota.
+const withQuotaRetry = async (operation, label) => {
+  const delays = [5000, 15000, 30000, 60000, 90000];
+
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isQuotaError(error) || attempt === delays.length) {
+        throw error;
+      }
+
+      const delay = delays[attempt];
+      console.warn(
+        `Cuota de Sheets agotada${label ? ` (${label})` : ''}. ` +
+        `Reintentando en ${Math.round(delay / 1000)} segundos...`
+      );
+      await sleep(delay);
+    }
+  }
+};
+
 const findColumnIndex = (headers, candidateNames) => {
   const normalizedHeaders = headers.map(normalizeText);
   for (const candidate of candidateNames) {
@@ -90,40 +128,40 @@ async function syncAllSheets() {
 
   // 1. Cargar catálogos centrales
   console.log('Cargando catálogos de la hoja central...');
-  const [
-    desafiosRes,
-    ejesRes,
-    convergentesRes,
-    facultadRes,
-    programasRes,
-    resultadoRes,
-    respondeARes,
-    indicadoresRes,
-    metasRes,
-    avancesRes,
-  ] = await Promise.all([
-    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'DESAFIOS!A1:B20' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'EJES!A1:B10' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'ESTRATEGIA_CONVERGENTE!A1:C60' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'ESTRATEGIA_FACULTAD!A1:C60' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'PROGRAMAS_INST!A1:C50' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'INDICADORES_RESULTADO!A1:C350' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'RESPONDE_A!A1:B20' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'INDICADORES_PRODUCTO!A1:P600' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'METAS!A1:J600' }),
-    sheets.spreadsheets.values.get({ spreadsheetId: centralSpreadsheetId, range: 'AVANCES!A1:J600' }),
-  ]);
+  const centralRanges = [
+    'DESAFIOS!A1:B20',
+    'EJES!A1:B10',
+    'ESTRATEGIA_CONVERGENTE!A1:C60',
+    'ESTRATEGIA_FACULTAD!A1:C60',
+    'PROGRAMAS_INST!A1:C50',
+    'INDICADORES_RESULTADO!A1:C350',
+    'RESPONDE_A!A1:B20',
+    'INDICADORES_PRODUCTO!A1:P600',
+    'METAS!A1:J600',
+    'AVANCES!A1:J600',
+  ];
 
-  const desafiosRows = desafiosRes.data.values || [];
-  const ejesRows = ejesRes.data.values || [];
-  const convergentesRows = convergentesRes.data.values || [];
-  const facultadRows = facultadRes.data.values || [];
-  const programasRows = programasRes.data.values || [];
-  const resultadoRows = resultadoRes.data.values || [];
-  const respondeARows = respondeARes.data.values || [];
-  const indicadoresRows = indicadoresRes.data.values || [];
-  const metasRows = metasRes.data.values || [];
-  const avancesRows = avancesRes.data.values || [];
+  // Un batchGet reemplaza diez lecturas independientes del spreadsheet central.
+  const centralBatchRes = await withQuotaRetry(
+    () => sheets.spreadsheets.values.batchGet({
+      spreadsheetId: centralSpreadsheetId,
+      ranges: centralRanges,
+    }),
+    'catálogos centrales'
+  );
+  const centralValues = centralBatchRes.data.valueRanges || [];
+  const rowsAt = (index) => centralValues[index]?.values || [];
+
+  const desafiosRows = rowsAt(0);
+  const ejesRows = rowsAt(1);
+  const convergentesRows = rowsAt(2);
+  const facultadRows = rowsAt(3);
+  const programasRows = rowsAt(4);
+  const resultadoRows = rowsAt(5);
+  const respondeARows = rowsAt(6);
+  const indicadoresRows = rowsAt(7);
+  const metasRows = rowsAt(8);
+  const avancesRows = rowsAt(9);
 
   const indicadoresHeader = indicadoresRows[0] || [
     'id', 'id_dependencia', 'id_desafio', 'id_estrategia_convergente', 'id_estrategia_facultad',
@@ -267,21 +305,24 @@ async function syncAllSheets() {
 
     try {
       // Leemos datos, metadatos de filas (para omitir filas ocultas) y títulos de pestañas
-      const [res, metaRes, sheetInfoRes] = await Promise.all([
-        sheets.spreadsheets.values.get({
-          spreadsheetId: dep.spreadsheetId,
-          range: `'${dep.sheetName}'!A2:Z300`,
-        }),
-        sheets.spreadsheets.get({
-          spreadsheetId: dep.spreadsheetId,
-          ranges: [`'${dep.sheetName}'!A1:A300`],
-          fields: 'sheets(data(rowMetadata(hiddenByUser,hiddenByFilter)))',
-        }),
-        sheets.spreadsheets.get({
-          spreadsheetId: dep.spreadsheetId,
-          fields: 'sheets(properties(title))',
-        }),
-      ]);
+      const [res, metaRes, sheetInfoRes] = await withQuotaRetry(
+        () => Promise.all([
+          sheets.spreadsheets.values.get({
+            spreadsheetId: dep.spreadsheetId,
+            range: `'${dep.sheetName}'!A2:Z300`,
+          }),
+          sheets.spreadsheets.get({
+            spreadsheetId: dep.spreadsheetId,
+            ranges: [`'${dep.sheetName}'!A1:A300`],
+            fields: 'sheets(data(rowMetadata(hiddenByUser,hiddenByFilter)))',
+          }),
+          sheets.spreadsheets.get({
+            spreadsheetId: dep.spreadsheetId,
+            fields: 'sheets(properties(title))',
+          }),
+        ]),
+        dep.nombre
+      );
       depData = res.data.values || [];
       rowMetadata = metaRes.data.sheets?.[0]?.data?.[0]?.rowMetadata || [];
       depSheetTitles = (sheetInfoRes.data.sheets || []).map((s) => s.properties.title);
@@ -299,6 +340,15 @@ async function syncAllSheets() {
       if (err.code === 403) {
         console.error(`👉 Asegúrate de compartir el sheet "${dep.spreadsheetId}" con: ${process.env.CLIENT_EMAIL || process.env.client_email}`);
       }
+
+      if (isQuotaError(err)) {
+        console.error(
+          `No fue posible recuperar la cuota para "${dep.nombre}". ` +
+          'Se detiene la sincronización para no provocar fallos en las siguientes dependencias.'
+        );
+        throw err;
+      }
+
       continue;
     }
 
@@ -404,11 +454,14 @@ async function syncAllSheets() {
     const avanceValueMap = new Map(); // normTabla -> valor formateado
     if (tablaRangesToFetch.length > 0) {
       try {
-        const batchG2 = await sheets.spreadsheets.values.batchGet({
-          spreadsheetId: dep.spreadsheetId,
-          ranges: tablaRangesToFetch,
-          valueRenderOption: 'FORMATTED_VALUE',
-        });
+        const batchG2 = await withQuotaRetry(
+          () => sheets.spreadsheets.values.batchGet({
+            spreadsheetId: dep.spreadsheetId,
+            ranges: tablaRangesToFetch,
+            valueRenderOption: 'FORMATTED_VALUE',
+          }),
+          `${dep.nombre} - avances G2`
+        );
         (batchG2.data.valueRanges || []).forEach((vr, idx) => {
           let normTitle = '';
           const m = (vr.range || '').match(/'?([^'!]+)'?!/);
@@ -430,6 +483,9 @@ async function syncAllSheets() {
         });
       } catch (errG2) {
         console.warn(`  ⚠️ No se pudieron leer las celdas G2 de "${dep.nombre}":`, errG2.message);
+        if (isQuotaError(errG2)) {
+          throw errG2;
+        }
       }
     }
 
@@ -769,6 +825,10 @@ async function syncAllSheets() {
       hidden: depHidden,
       changes: depChangesLog,
     });
+
+    // Evita que las lecturas de varias dependencias caigan en la misma ventana
+    // de cuota por minuto del usuario de Google Sheets.
+    await sleep(3000);
   }
 
   // 3. Aplicar actualizaciones por lote en la hoja central
